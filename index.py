@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from yaml import dump
+from yaml import safe_dump
 
 
 BASE_URL = "https://kubernetes.io"
@@ -16,6 +16,7 @@ def main():
 
 
 def createIndex(soup):
+    i = 0
     index = []
     chapters = soup.select(".browsedocs > .browsesection") #  > .docstitle a
     for elem in chapters:
@@ -23,11 +24,15 @@ def createIndex(soup):
         subs = elem.select('.pages a')
         if title.get('href') in IGNORE_LIST:
             continue
+        i += 1
         chapter = {
+            'number': i,
             'title': title.text,
             'link': "%s%s" % (BASE_URL, title.get('href')),
+            'fetched': False,
             'sub': list(map(lambda x: {
                 'title': x.text,
+                'fetched': False,
                 'link': "%s%s" % (BASE_URL, x.get('href')),
             }, subs))
         }
@@ -38,7 +43,7 @@ def createIndex(soup):
 
 def store(dic):
     stream = open('./output/index.yaml', 'w')
-    dump(dic, stream=stream, default_flow_style=False)
+    safe_dump(dic, stream=stream, default_flow_style=False, explicit_start=True)
 
 
 if __name__ == '__main__':
