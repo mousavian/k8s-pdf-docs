@@ -1,7 +1,8 @@
 import os
-from yaml import safe_load, safe_dump
+from functools import reduce
 from progress.bar import Bar
 from weasyprint import HTML, CSS
+from yaml import safe_load, safe_dump
 
 
 cssStr = """
@@ -26,7 +27,8 @@ cssStr = """
 def main():
   stream = open('./output/index.yaml')
   index = safe_load(stream)
-  bar = Bar('Processing', max=len(index))
+  totalPages = reduce(lambda acc, ch: acc + len(ch['sub']) + 1, index, 0)
+  bar = Bar('Processing', max=totalPages)
 
   try:
     os.mkdir('./output/pdf')
@@ -49,6 +51,7 @@ def main():
       store(index)
 
     for j, sub in enumerate(chapter['sub']):
+      bar.next()
       if 'pdf' not in sub:
         sub_path = '%s/%s.pdf' % (chapter_dir, sub['title'])
         html = HTML(sub['link'])
