@@ -34,21 +34,28 @@ def main():
     pass
 
   for i, chapter in enumerate(index):
-    if chapter['fetched'] == True:
-      pass
-
+    bar.next()
     chapter_dir = './output/pdf/%s - %s' % (chapter['number'], chapter['title'])
     try:
       os.mkdir(chapter_dir)
     except OSError:
       pass
 
-    file_dir = '%s/%s.pdf' % (chapter_dir, chapter['title'])
-    html = HTML(chapter['link'])
-    html.write_pdf(file_dir, stylesheets=[CSS(string=cssStr)])
-    index[i]['fetched'] = True
-    store(index)
-    bar.next()
+    if 'pdf' not in chapter:
+      file_path = '%s/%s.pdf' % (chapter_dir, chapter['title'])
+      html = HTML(chapter['link'])
+      html.write_pdf(file_path, stylesheets=[CSS(string=cssStr)])
+      index[i]['pdf'] = file_path
+      store(index)
+
+    for j, sub in enumerate(chapter['sub']):
+      if 'pdf' not in sub:
+        sub_path = '%s/%s.pdf' % (chapter_dir, sub['title'])
+        html = HTML(sub['link'])
+        html.write_pdf(sub_path, stylesheets=[CSS(string=cssStr)])
+        index[i]['sub'][j]['pdf'] = sub_path
+        store(index)
+
   bar.finish()
 
 

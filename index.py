@@ -29,10 +29,8 @@ def createIndex(soup):
             'number': i,
             'title': title.text,
             'link': "%s%s" % (BASE_URL, title.get('href')),
-            'fetched': False,
             'sub': list(map(lambda x: {
                 'title': x.text,
-                'fetched': False,
                 'link': "%s%s" % (BASE_URL, x.get('href')),
             }, subs))
         }
