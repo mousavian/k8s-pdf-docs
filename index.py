@@ -20,7 +20,7 @@ def create_index(soup):
     chapters = soup.select(".browsedocs > .browsesection") #  > .docstitle a
     for elem in chapters:
         title = elem.select_one('.docstitle a')
-        subs = elem.select('.pages a')
+        sections = elem.select('.pages a')
         if title.get('href') in IGNORE_LIST:
             continue
         i += 1
@@ -28,10 +28,10 @@ def create_index(soup):
             'number': i,
             'title': title.text,
             'link': "%s%s" % (BASE_URL, title.get('href')),
-            'sub': list(map(lambda x: {
+            'sections': list(map(lambda x: {
                 'title': x.text,
                 'link': "%s%s" % (BASE_URL, x.get('href')),
-            }, subs))
+            }, sections))
         }
 
         index.append(chapter)

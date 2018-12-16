@@ -31,7 +31,7 @@ def main():
     logging.basicConfig(filename='process.log', level=logging.INFO)
     stream = open('./output/index.yaml')
     index = safe_load(stream)
-    total_pages = reduce(lambda acc, ch: acc + len(ch['sub']) + 1, index, 0)
+    total_pages = reduce(lambda acc, ch: acc + len(ch['sections']) + 1, index, 0)
 
     tasks = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
@@ -40,6 +40,7 @@ def main():
     consumers = [ Converter(tasks, results) for i in range(num_consumers) ]
     bar = Bar('Downloading using %i consumers' % num_consumers, max=total_pages)
     ensure_directory('./output/pdf')
+    errors_counter = 0
 
     for w in consumers:
         w.start()
@@ -48,21 +49,29 @@ def main():
         chapter_directory = './output/pdf/%s - %s' % (chapter['number'], chapter['title'])
         ensure_directory(chapter_directory)
 
-        if 'pdf' not in chapter:
+        if 'pdf' in chapter:
+            bar.next()
+            total_pages -= 1
+        elif 'error' in chapter:
+            bar.next()
+            total_pages -= 1
+            errors_counter += 1
+        else:
             tasks.put({
                 'title': chapter['title'],
                 'path': '%s/%s.pdf' % (chapter_directory, chapter['title'].replace('/', '-')),
                 'link': chapter['link'],
                 'chapter': chapter_number
             })
-        else:
-            bar.next()
-            total_pages -= 1
 
-        for section_number, section in enumerate(chapter['sub']):
+        for section_number, section in enumerate(chapter['sections']):
             if 'pdf' in section:
                 bar.next()
                 total_pages -= 1
+            elif 'error' in section:
+                bar.next()
+                total_pages -= 1
+                errors_counter += 1
             else:
                 tasks.put({
                     'title': section['title'],
@@ -80,18 +89,27 @@ def main():
         result = results.get()
         bar.next()
         logging.info("Task is done. file: %s" % (result['path']))
-        isSection = 'section' in result
+        is_faulty = 'error' in result
+        is_section = 'section' in result
         chapter_number = result['chapter']
-        if isSection:
+        if is_section:
             section_number = result['section']
-            index[chapter_number]['sub'][section_number]['pdf'] = result['path']
+            if is_faulty:
+                index[chapter_number]['sections'][section_number]['error'] = True
+            else:
+                index[chapter_number]['sections'][section_number]['pdf'] = result['path']
         else:
-            index[chapter_number]['pdf'] = result['path']
+            if is_faulty:
+                index[chapter_number]['error'] = True
+            else:
+                index[chapter_number]['pdf'] = result['path']
         store_index(index)
         total_pages -= 1
 
     # Wait for all of the tasks to finish
     tasks.join()
+    if errors_counter > 0:
+        print('Got %s errors. check logs for more info' % errors_counter)
     return
 
 class Converter(multiprocessing.Process):
@@ -110,10 +128,15 @@ class Converter(multiprocessing.Process):
 
             section = task['section'] if 'section' in task else '-'
             logging.info("Starting to download & convert (chapter: %s/section:%s) %s" %(task['chapter'], section, task['link']))
-            HTML(task['link']).write_pdf(
-                task['path'],
-                stylesheets=[CSS(string=cssStr)],
-                font_config=font_config)
+            try:
+                HTML(task['link']).write_pdf(
+                    task['path'],
+                    stylesheets=[CSS(string=cssStr)],
+                    font_config=font_config)
+            except Exception as e:
+                task['error'] = True
+                logging.error(e)
+
             self.task_queue.task_done()
             self.result_queue.put(task)
         return

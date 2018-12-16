@@ -1,4 +1,3 @@
-import glob
 from functools import reduce
 from PyPDF2 import PdfFileMerger, PdfFileReader
 from yaml import safe_load
@@ -23,7 +22,7 @@ def main():
 def to_list_of_pdf(chapter):
   pdfs = []
   pdfs += ([chapter['pdf']] if 'pdf' in chapter else [])
-  pdfs += [sub['pdf'] if 'pdf' in sub else None for sub in chapter['sub']]
+  pdfs += [sections['pdf'] if 'pdf' in sections else None for sections in chapter['sections']]
   return list(filter(lambda x: x is not None, pdfs))
 
 if __name__ == '__main__':
