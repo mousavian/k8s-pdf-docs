@@ -20,6 +20,8 @@ python index.py
 
 # To start downloading & converting to PDF
 python process.py
+# on macOS:
+OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES python process.py
 
 # To stitch all downloaded PDFs and generate one single file
 python stitch.py

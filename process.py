@@ -1,11 +1,13 @@
+import logging
 import multiprocessing
 from functools import reduce
 from helpers import store_index, ensure_directory
 from progress.bar import Bar
 from weasyprint import HTML, CSS
+from weasyprint.fonts import FontConfiguration
 from yaml import safe_load
 
-
+font_config = FontConfiguration()
 cssStr = """
 #pre-footer, footer, header, .feedback--prompt, .feedback--yes, .feedback--no,
 #hero, #user-journeys-toc, #content .track,
@@ -26,16 +28,21 @@ cssStr = """
 """
 
 def main():
+    logging.basicConfig(filename='process.log', level=logging.INFO)
     stream = open('./output/index.yaml')
     index = safe_load(stream)
     total_pages = reduce(lambda acc, ch: acc + len(ch['sub']) + 1, index, 0)
 
     tasks = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
-    num_consumers = multiprocessing.cpu_count() #* 2
+    num_consumers = multiprocessing.cpu_count() * 2
+    logging.info("Creating %s consumers" % num_consumers)
     consumers = [ Converter(tasks, results) for i in range(num_consumers) ]
     bar = Bar('Downloading using %i consumers' % num_consumers, max=total_pages)
     ensure_directory('./output/pdf')
+
+    for w in consumers:
+        w.start()
 
     for chapter_number, chapter in enumerate(index):
         chapter_directory = './output/pdf/%s - %s' % (chapter['number'], chapter['title'])
@@ -69,17 +76,14 @@ def main():
     for i in range(num_consumers):
         tasks.put(None)
 
-    for w in consumers:
-        w.start()
-
     while total_pages > 0:
         result = results.get()
         bar.next()
-
+        logging.info("Task is done. file: %s" % (result['path']))
         isSection = 'section' in result
         chapter_number = result['chapter']
         if isSection:
-            section_number = result['section_number']
+            section_number = result['section']
             index[chapter_number]['sub'][section_number]['pdf'] = result['path']
         else:
             index[chapter_number]['pdf'] = result['path']
@@ -100,9 +104,16 @@ class Converter(multiprocessing.Process):
         while True:
             task = self.task_queue.get()
             if task is None:
+                logging.info("%s received STOP SIGNAL." % self.name)
                 self.task_queue.task_done()
                 break
-            HTML(task['link']).write_pdf(task['path'], stylesheets=[CSS(string=cssStr)])
+
+            section = task['section'] if 'section' in task else '-'
+            logging.info("Starting to download & convert (chapter: %s/section:%s) %s" %(task['chapter'], section, task['link']))
+            HTML(task['link']).write_pdf(
+                task['path'],
+                stylesheets=[CSS(string=cssStr)],
+                font_config=font_config)
             self.task_queue.task_done()
             self.result_queue.put(task)
         return
