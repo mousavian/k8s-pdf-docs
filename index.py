@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from yaml import safe_dump
+from helpers import store_index
 
 
 BASE_URL = "https://kubernetes.io"
@@ -11,11 +11,10 @@ IGNORE_LIST = [
 def main():
     page = requests.get("%s/docs/home/" % BASE_URL)
     soup = BeautifulSoup(page.text, 'lxml')
-    index = createIndex(soup)
+    index = create_index(soup)
     store(index)
 
-
-def createIndex(soup):
+def create_index(soup):
     i = 0
     index = []
     chapters = soup.select(".browsedocs > .browsesection") #  > .docstitle a
@@ -37,12 +36,6 @@ def createIndex(soup):
 
         index.append(chapter)
     return index
-
-
-def store(dic):
-    stream = open('./output/index.yaml', 'w')
-    safe_dump(dic, stream=stream, default_flow_style=False, explicit_start=True)
-
 
 if __name__ == '__main__':
     main()

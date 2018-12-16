@@ -1,8 +1,9 @@
-import os
+import multiprocessing
 from functools import reduce
+from helpers import store_index, ensure_directory
 from progress.bar import Bar
 from weasyprint import HTML, CSS
-from yaml import safe_load, safe_dump
+from yaml import safe_load
 
 
 cssStr = """
@@ -25,48 +26,86 @@ cssStr = """
 """
 
 def main():
-  stream = open('./output/index.yaml')
-  index = safe_load(stream)
-  totalPages = reduce(lambda acc, ch: acc + len(ch['sub']) + 1, index, 0)
-  bar = Bar('Processing', max=totalPages)
+    stream = open('./output/index.yaml')
+    index = safe_load(stream)
+    total_pages = reduce(lambda acc, ch: acc + len(ch['sub']) + 1, index, 0)
 
-  try:
-    os.mkdir('./output/pdf')
-  except:
-    pass
+    tasks = multiprocessing.JoinableQueue()
+    results = multiprocessing.Queue()
+    num_consumers = multiprocessing.cpu_count() #* 2
+    consumers = [ Converter(tasks, results) for i in range(num_consumers) ]
+    bar = Bar('Downloading using %i consumers' % num_consumers, max=total_pages)
+    ensure_directory('./output/pdf')
 
-  for i, chapter in enumerate(index):
-    bar.next()
-    chapter_dir = './output/pdf/%s - %s' % (chapter['number'], chapter['title'])
-    try:
-      os.mkdir(chapter_dir)
-    except OSError:
-      pass
+    for chapter_number, chapter in enumerate(index):
+        chapter_directory = './output/pdf/%s - %s' % (chapter['number'], chapter['title'])
+        ensure_directory(chapter_directory)
 
-    if 'pdf' not in chapter:
-      file_path = '%s/%s.pdf' % (chapter_dir, chapter['title'])
-      html = HTML(chapter['link'])
-      html.write_pdf(file_path, stylesheets=[CSS(string=cssStr)])
-      index[i]['pdf'] = file_path
-      store(index)
+        if 'pdf' not in chapter:
+            tasks.put({
+                'title': chapter['title'],
+                'path': '%s/%s.pdf' % (chapter_directory, chapter['title'].replace('/', '-')),
+                'link': chapter['link'],
+                'chapter': chapter_number
+            })
+        else:
+            bar.next()
+            total_pages -= 1
 
-    for j, sub in enumerate(chapter['sub']):
-      bar.next()
-      if 'pdf' not in sub:
-        sub_path = '%s/%s.pdf' % (chapter_dir, sub['title'])
-        html = HTML(sub['link'])
-        html.write_pdf(sub_path, stylesheets=[CSS(string=cssStr)])
-        index[i]['sub'][j]['pdf'] = sub_path
-        store(index)
+        for section_number, section in enumerate(chapter['sub']):
+            if 'pdf' in section:
+                bar.next()
+                total_pages -= 1
+            else:
+                tasks.put({
+                    'title': section['title'],
+                    'path': ('%s/%s.pdf' % (chapter_directory, section['title'].replace('/', '-'))),
+                    'link': section['link'],
+                    'chapter': chapter_number,
+                    'section': section_number,
+                })
 
-  bar.finish()
+    # Add a poison pill for each consumer
+    for i in range(num_consumers):
+        tasks.put(None)
 
+    for w in consumers:
+        w.start()
 
+    while total_pages > 0:
+        result = results.get()
+        bar.next()
 
-def store(dic):
-    stream = open('./output/index.yaml', 'w')
-    safe_dump(dic, stream=stream, default_flow_style=False)
+        isSection = 'section' in result
+        chapter_number = result['chapter']
+        if isSection:
+            section_number = result['section_number']
+            index[chapter_number]['sub'][section_number]['pdf'] = result['path']
+        else:
+            index[chapter_number]['pdf'] = result['path']
+        store_index(index)
+        total_pages -= 1
 
+    # Wait for all of the tasks to finish
+    tasks.join()
+    return
+
+class Converter(multiprocessing.Process):
+    def __init__(self, task_queue, result_queue):
+        multiprocessing.Process.__init__(self)
+        self.task_queue = task_queue
+        self.result_queue = result_queue
+
+    def run(self):
+        while True:
+            task = self.task_queue.get()
+            if task is None:
+                self.task_queue.task_done()
+                break
+            HTML(task['link']).write_pdf(task['path'], stylesheets=[CSS(string=cssStr)])
+            self.task_queue.task_done()
+            self.result_queue.put(task)
+        return
 
 if __name__ == '__main__':
     main()
